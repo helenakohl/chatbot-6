@@ -1,8 +1,8 @@
-import { useMemo, useState, useRef, useEffect, useCallback } from "react";
+import { fetchEventSource } from "@fortaine/fetch-event-source";
+import { useMemo, useState } from "react";
 import { appConfig } from "../../config.browser";
 
 const API_PATH = "/api/chat";
-
 interface ChatMessage {
   role: "user" | "assistant";
   content: string;
@@ -26,50 +26,20 @@ function streamAsyncIterator(stream: ReadableStream) {
   };
 }
 
+/**
+ * A custom hook to handle the chat state and logic
+ */
 export function useChat() {
   const [currentChat, setCurrentChat] = useState<string | null>(null);
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
   const [state, setState] = useState<"idle" | "waiting" | "loading">("idle");
-  const [assitantSpeaking, setAssitantSpeaking] = useState(false);
-
-  const recognizeSpeech = useCallback(async (audioBlob: Blob): Promise<string> => {
-    const reader = new FileReader();
-    return new Promise((resolve, reject) => {
-      reader.onload = async () => {
-        const base64Audio = reader.result?.toString().split(',')[1];
-        if (base64Audio) {
-          try {
-            const response = await fetch('/.netlify/functions/stt', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ audioContent: base64Audio }),
-            });
-            
-            if (response.ok) {
-              const { transcription } = await response.json();
-              resolve(transcription);
-            } else {
-              reject(new Error('Failed to transcribe speech'));
-            }
-          } catch (error) {
-            console.error('Error calling STT function:', error);
-            reject(error);
-          }
-        } else {
-          reject(new Error('Failed to read audio file'));
-        }
-      };
-      reader.readAsDataURL(audioBlob);
-    });
-  }, []);
 
   // Lets us cancel the stream
   const abortController = useMemo(() => new AbortController(), []);
 
-  const speechQueue = useRef<SpeechSynthesisUtterance[]>([]);
-  const isSpeaking = useRef<boolean>(false);
-
-  //Cancels the current chat and adds the current chat to the history
+  /**
+   * Cancels the current chat and adds the current chat to the history
+   */
   function cancel() {
     setState("idle");
     abortController.abort();
@@ -84,30 +54,34 @@ export function useChat() {
     }
   }
 
-  // Clears the chat history
+  /**
+   * Clears the chat history
+   */
+
   function clear() {
     console.log("clear");
     setChatHistory([]);
   }
 
-  
-  // Sends a new message to the AI function and streams the response
+  /**
+   * Sends a new message to the AI function and streams the response
+   */
   const sendMessage = async (
     message: string,
     chatHistory: Array<ChatMessage>,
   ) => {
-    if (assitantSpeaking) {
-      console.log("Cannot send message while assistant is speaking");
-      return;
-    }
     setState("waiting");
     let chatContent = "";
     const newHistory = [
       ...chatHistory,
       { role: "user", content: message } as const,
     ];
+
     setChatHistory(newHistory);
     const body = JSON.stringify({
+      // Only send the most recent messages. This is also
+      // done in the serverless function, but we do it here
+      // to avoid sending too much data
       messages: newHistory.slice(-appConfig.historyLength),
     });
 
@@ -118,38 +92,39 @@ export function useChat() {
       method: "POST",
       signal: abortController.signal,
     });
-
-    setCurrentChat("Typing ...");
+    
+    setCurrentChat("...");
 
     if (!res.ok || !res.body) {
       setState("idle");
       return;
     }
 
-    let fullResponse = "";
-
     for await (const event of streamAsyncIterator(res.body)) {
       setState("loading");
-      const data = decoder.decode(event).split("\n");
+      const data = decoder.decode(event).split("\n")
       for (const chunk of data) {
-        if (!chunk) continue;
+        if(!chunk) continue;
         const message = JSON.parse(chunk);
-        const content = message?.choices?.[0]?.delta?.content;
+        if (message?.role === "assistant") {
+          chatContent = "";
+          continue;
+        }
+        const content = message?.choices?.[0]?.delta?.content
         if (content) {
-          fullResponse += content;
+          chatContent += content;
+          setCurrentChat(chatContent);
         }
       }
     }
 
     setChatHistory((curr) => [
       ...curr,
-      { role: "assistant", content: fullResponse } as const,
+      { role: "assistant", content: chatContent } as const,
     ]);
-
-    //add longer response time
     setCurrentChat(null);
-    setState("idle"); 
+    setState("idle");
   };
 
-  return { sendMessage, currentChat, chatHistory, cancel, clear, state, assitantSpeaking };
+  return { sendMessage, currentChat, chatHistory, cancel, clear, state };
 }
