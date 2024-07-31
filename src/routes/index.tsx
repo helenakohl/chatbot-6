@@ -9,7 +9,7 @@ import { Welcome } from "../components/Welcome";
 export default function Index() {
   const [message, setMessage] = useState<string>("");
 
-  const { currentChat, chatHistory, sendMessage, cancel, state, clear, assitantSpeaking } = useChat();
+  const { currentChat, chatHistory, sendMessage, cancel, state, clear } = useChat();
 
   const currentMessage = useMemo(() => {
     return { content: currentChat ?? "", role: "assistant" } as const;
@@ -53,8 +53,6 @@ export default function Index() {
     await sendMessage(message, chatHistory);
     setMessage("");
   };
-
-  console.log("isSpeaking:", assitantSpeaking);
 
   return (
     <App title="BMW AI chat bot">
@@ -128,11 +126,11 @@ export default function Index() {
             {state === "idle" ? (
               <button 
               className={`py-2 px-4 rounded-r-lg font-bold ${
-                state === "idle" && !assitantSpeaking
+                state === "idle" 
                   ? "bg-blue-700 text-white hover:bg-blue-800"
                   : "bg-gray-400 text-gray-600"
               }`}
-              disabled={state !== "idle" || assitantSpeaking}
+              disabled={state !== "idle"}
               type="submit"
             >
               Send
