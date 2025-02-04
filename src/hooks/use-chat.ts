@@ -2,6 +2,7 @@ import { useMemo, useState, useEffect, useCallback } from "react";
 import { appConfig } from "../../config.browser";
 import { v4 as uuidv4 } from 'uuid';
 
+
 const API_PATH = "/api/chat";
 interface ChatMessage {
   role: "user" | "assistant";
@@ -63,14 +64,25 @@ export function useChat() {
   // Lets us cancel the stream
   const abortController = useMemo(() => new AbortController(), []);
 
-  useEffect(() => {
-    const storedUserId = localStorage.getItem('chatUserId');
-    if (storedUserId) {
-      setUserId(storedUserId);
+   // Set the userID
+   useEffect(() => {
+    // Extract PartID from URL
+    const params = new URLSearchParams(window.location.search);
+    const partID = params.get("PartID");
+
+    if (partID) {
+      setUserId(partID);
+      localStorage.setItem("chatUserId", partID);
     } else {
-      const newUserId = uuidv4();
-      localStorage.setItem('chatUserId', newUserId);
-      setUserId(newUserId);
+      // If no PartID, generate a new UUID
+      const storedUserId = localStorage.getItem("chatUserId");
+      if (storedUserId) {
+        setUserId(storedUserId);
+      } else {
+        const newUserId = uuidv4();
+        localStorage.setItem("chatUserId", newUserId);
+        setUserId(newUserId);
+      }
     }
   }, []);
 
